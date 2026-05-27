@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文物挑戰賽 - 底部流暢版 🍈🚣</title>
+
+<style>
+    body { margin: 0; overflow: hidden; background: #e2f5d3; font-family: "Microsoft JhengHei"; }
+    canvas { display: block; background: transparent; }
+
+    #ui {
+        position: absolute; top: 20px; left: 20px; color: black; 
+        font-size: 28px; font-weight: bold; z-index: 10;
+        background: rgba(255, 255, 255, 0.8); padding: 10px 20px; border-radius: 15px;
+    }
+
+    #questionDisplay {
+        position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+        width: 60%; background: rgba(255, 255, 255, 0.9);
+        border: 4px solid #58b9ff; border-radius: 20px; padding: 15px;
+        text-align: center; font-size: 24px; font-weight: bold;
+        display: none; z-index: 5;
+    }
+
+    #message {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        color: white; font-size: 60px; text-shadow: 3px 3px 0 #000;
+        text-align: center; display: none; z-index: 100;
+        background: rgba(0,0,0,0.6); padding: 40px; border-radius: 30px;
+    }
+
+    .btn-retry {
+        font-size: 24px; padding: 12px 24px; margin-top: 20px;
+        border: none; border-radius: 12px; cursor: pointer;
+        background: #58b9ff; color: white; font-weight: bold;
+    }
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+    ❤️ 生命：<span id="hp">3</span> &nbsp;&nbsp; 🏆 成功：<span id="correctCount">0</span> / 3
+</div>
+
+<div id="questionDisplay"></div>
+
+<div id="message">
+    <span id="msgText"></span><br>
+    <button class="btn-retry" onclick="location.reload()">重新開始</button>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let hp = 3;
+let currentCorrectCount = 0;
+let gameRunning = true;
+let timePass = 0;
+let isAnswering = false;
+
+const bg = new Image(); bg.src = "background_new.png"; 
+const playerImg = new Image(); playerImg.src = "character.png";
+
+// 引用遊戲圖庫
+const artifactSrcs = ["1.png", "2.png", "3.png", "4.png"];
+const artifactImages = artifactSrcs.map(src => {
+    const img = new Image();
+    img.src = src;
+    return img;
+});
+
+const riverWidth = 600; 
+let riverLeft = (canvas.width - riverWidth) / 2;
+let riverRight = riverLeft + riverWidth;
+
+// --- 修改點 1：將 y 設定在畫布最底端附近 ---
+const player = {
+    x: canvas.width / 2 - 60, 
+    y: canvas.height - 130, // 靠近底部
+    width: 100, 
+    height: 100, 
+    speed: 18, // 提高速度提高流暢感
+    vx: 0 // 增加加速度邏輯讓移動平滑
+};
+
+const questions = [
+    { q:"雲端發票的好處是？", a:["容易遺失","可自動對獎","要付費","不能存手機"], correct:1 },
+    { q:"哪一個是地方稅？", a:["關稅","貨物稅","房屋稅","證交稅"], correct:2 },
+    { q:"使用牌照稅與什麼有關？", a:["汽機車","冰箱","手機","股票"], correct:0 }
+];
+
+let activeOptions = [];
+const keys = {}; // 追蹤按鍵狀態
+
+function spawnQuestion() {
+    if (isAnswering || !gameRunning) return;
+    isAnswering = true;
+    let currentQ = questions[Math.floor(Math.random() * questions.length)];
+    
+    const qBox = document.getElementById("questionDisplay");
+    qBox.innerText = "⭐ 題目：" + currentQ.q;
+    qBox.style.display = "block";
+
+    activeOptions = [];
+    const laneWidth = riverWidth / 4;
+    for (let i = 0; i < 4; i++) {
+        activeOptions.push({
+            x: riverLeft + (i * laneWidth) + (laneWidth/2 - 40),
+            y: -150,
+            width: 80,
+            height: 80,
+            img: artifactImages[i % artifactImages.length],
+            text: currentQ.a[i],
+            isCorrect: (i === currentQ.correct)
+        });
+    }
+}
+
+function updateOptions(){
+    for(let i = activeOptions.length - 1; i >= 0; i--){
+        let o = activeOptions[i];
+        
+        // --- 修改點 2：調慢選項出現與落下的速度 ---
+        o.y += 2.5; 
+
+        ctx.drawImage(o.img, o.x, o.y, o.width, o.height);
+        ctx.fillStyle = "black";
+        ctx.font = "bold 20px Microsoft JhengHei";
+        ctx.textAlign = "center";
+        ctx.fillText(o.text, o.x + o.width/2, o.y + o.height + 25);
+
+        if(
+            player.x < o.x + o.width &&
+            player.x + player.width > o.x &&
+            player.y < o.y + o.height &&
+            player.y + player.height > o.y
+        ){
+            if(o.isCorrect) {
+                currentCorrectCount++;
+                if(currentCorrectCount >= 3) endGame("修復成功！✨");
+            } else {
+                hp--;
+                if(hp <= 0) endGame("修復失敗 😭");
+            }
+            isAnswering = false;
+            activeOptions = [];
+            document.getElementById("questionDisplay").style.display = "none";
+            document.getElementById("hp").innerText = hp;
+            document.getElementById("correctCount").innerText = currentCorrectCount;
+            return;
+        }
+
+        if(o.y > canvas.height) {
+            activeOptions = [];
+            isAnswering = false;
+            document.getElementById("questionDisplay").style.display = "none";
+        }
+    }
+}
+
+// --- 修改點 3：使用「連續監聽」讓移動更流暢 ---
+function handlePlayerMovement() {
+    if (keys["ArrowLeft"] || keys["a"]) player.vx = -player.speed;
+    else if (keys["ArrowRight"] || keys["d"]) player.vx = player.speed;
+    else player.vx *= 0.8; // 增加摩擦力緩衝效果
+
+    player.x += player.vx;
+    if(player.x < riverLeft) player.x = riverLeft;
+    if(player.x > riverRight - player.width) player.x = riverRight - player.width;
+}
+
+function gameLoop(){
+    if(!gameRunning) return;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    
+    // 背景與河水
+    ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
+    
+    handlePlayerMovement();
+    ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+    
+    if(isAnswering) updateOptions();
+    requestAnimationFrame(gameLoop);
+}
+
+window.addEventListener("keydown", (e) => keys[e.key] = true);
+window.addEventListener("keyup", (e) => keys[e.key] = false);
+
+setInterval(spawnQuestion, 4000);
+
+function endGame(text){
+    gameRunning = false;
+    document.getElementById("msgText").innerText = text;
+    document.getElementById("message").style.display = "block";
+}
+
+gameLoop();
+</script>
+</body>
+</html>
