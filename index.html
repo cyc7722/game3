@@ -2,38 +2,52 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>文物挑戰賽 - 底部流暢版 🍈🚣</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>釋迦漂漂河 - 手機平板雙棲版 🍈🚣</title>
 
 <style>
-    body { margin: 0; overflow: hidden; background: #e2f5d3; font-family: "Microsoft JhengHei"; }
+    /* 這裡加入了防止手機雙擊放大、長按選取文字的設定，讓遊戲操控更順手 */
+    body { 
+        margin: 0; 
+        overflow: hidden; 
+        background: #e2f5d3; 
+        font-family: "Microsoft JhengHei";
+        position: fixed;
+        width: 100%;
+        height: 100%;
+        touch-action: none; /* 防止手機瀏覽器預設的縮放與滾動行為 */
+        -webkit-user-select: none; /* 防止長按選取文字 */
+        user-select: none;
+    }
     canvas { display: block; background: transparent; }
 
     #ui {
         position: absolute; top: 20px; left: 20px; color: black; 
-        font-size: 28px; font-weight: bold; z-index: 10;
-        background: rgba(255, 255, 255, 0.8); padding: 10px 20px; border-radius: 15px;
+        font-size: 20px; font-weight: bold; z-index: 10;
+        background: rgba(255, 255, 255, 0.8); padding: 8px 15px; border-radius: 15px;
     }
 
     #questionDisplay {
         position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
-        width: 60%; background: rgba(255, 255, 255, 0.9);
-        border: 4px solid #58b9ff; border-radius: 20px; padding: 15px;
-        text-align: center; font-size: 24px; font-weight: bold;
-        display: none; z-index: 5;
+        width: 85%; background: rgba(255, 255, 255, 0.95);
+        border: 4px solid #58b9ff; border-radius: 15px; padding: 10px;
+        text-align: center; font-size: 18px; font-weight: bold;
+        display: none; z-index: 5; box-shadow: 0 4px 15px rgba(0,0,0,0.2);
     }
 
     #message {
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        color: white; font-size: 60px; text-shadow: 3px 3px 0 #000;
+        color: white; font-size: 36px; text-shadow: 2px 2px 0 #000;
         text-align: center; display: none; z-index: 100;
-        background: rgba(0,0,0,0.6); padding: 40px; border-radius: 30px;
+        background: rgba(0,0,0,0.7); padding: 30px; border-radius: 20px;
+        width: 70%;
     }
 
-    .btn-retry {
-        font-size: 24px; padding: 12px 24px; margin-top: 20px;
-        border: none; border-radius: 12px; cursor: pointer;
-        background: #58b9ff; color: white; font-weight: bold;
+    /* 針對平板與電腦等大螢幕微調 UI 大小 */
+    @media (min-width: 768px) {
+        #ui { font-size: 28px; }
+        #questionDisplay { font-size: 26px; width: 70%; padding: 15px; }
+        #message { font-size: 50px; }
     }
 </style>
 </head>
@@ -48,7 +62,7 @@
 
 <div id="message">
     <span id="msgText"></span><br>
-    <button class="btn-retry" onclick="location.reload()">重新開始</button>
+    <button onclick="location.reload()" style="font-size:20px; padding:10px 20px; margin-top:15px; cursor:pointer; background:#58b9ff; color:white; border:none; border-radius:12px; font-weight:bold;">重新開始</button>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -56,19 +70,35 @@
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+
+// 宣告全域變數，方便在視窗縮放時調整
+let riverWidth, riverLeft, riverRight, laneWidth;
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    // --- 修改點 1：自動適應螢幕寬度（RWD 概念） ---
+    // 如果是手機（螢幕窄），河道寬度自動填滿 95% 的螢幕；如果是平板或大螢幕，固定最大 800 像素
+    riverWidth = Math.min(window.innerWidth * 0.95, 800); 
+    riverLeft = (canvas.width - riverWidth) / 2;
+    riverRight = riverLeft + riverWidth;
+    laneWidth = riverWidth / 4;
+
+    // 娃娃位置也根據螢幕高度重新定位在底部
+    if(player) {
+        player.y = canvas.height - (player.height + 30);
+    }
+}
 
 let hp = 3;
 let currentCorrectCount = 0;
 let gameRunning = true;
-let timePass = 0;
 let isAnswering = false;
 
 const bg = new Image(); bg.src = "background_new.png"; 
 const playerImg = new Image(); playerImg.src = "character.png";
 
-// 引用遊戲圖庫
 const artifactSrcs = ["1.png", "2.png", "3.png", "4.png"];
 const artifactImages = artifactSrcs.map(src => {
     const img = new Image();
@@ -76,19 +106,18 @@ const artifactImages = artifactSrcs.map(src => {
     return img;
 });
 
-const riverWidth = 600; 
-let riverLeft = (canvas.width - riverWidth) / 2;
-let riverRight = riverLeft + riverWidth;
-
-// --- 修改點 1：將 y 設定在畫布最底端附近 ---
+// 娃娃基礎設定
 const player = {
-    x: canvas.width / 2 - 60, 
-    y: canvas.height - 130, // 靠近底部
-    width: 100, 
-    height: 100, 
-    speed: 18, // 提高速度提高流暢感
-    vx: 0 // 增加加速度邏輯讓移動平滑
+    x: 0, // 會在初始化或重算大小時被置中
+    y: 0,
+    width: 110,  // 微調尺寸，讓它在手機直螢幕上不會顯得太大
+    height: 110, 
+    speed: 14, 
+    vx: 0
 };
+
+// 讓娃娃初始置中
+player.x = window.innerWidth / 2 - (player.width / 2);
 
 const questions = [
     { q:"雲端發票的好處是？", a:["容易遺失","可自動對獎","要付費","不能存手機"], correct:1 },
@@ -97,81 +126,141 @@ const questions = [
 ];
 
 let activeOptions = [];
-const keys = {}; // 追蹤按鍵狀態
+const keys = {};
+let touchX = null; // 紀錄觸控位置
+
+// 初始化畫布大小
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
 
 function spawnQuestion() {
     if (isAnswering || !gameRunning) return;
     isAnswering = true;
     let currentQ = questions[Math.floor(Math.random() * questions.length)];
-    
     const qBox = document.getElementById("questionDisplay");
     qBox.innerText = "⭐ 題目：" + currentQ.q;
     qBox.style.display = "block";
 
     activeOptions = [];
-    const laneWidth = riverWidth / 4;
+    // 依據重新計算後的 laneWidth 計算物件大小與位置
+    let objSize = Math.min(laneWidth * 0.7, 90); 
     for (let i = 0; i < 4; i++) {
         activeOptions.push({
-            x: riverLeft + (i * laneWidth) + (laneWidth/2 - 40),
-            y: -150,
-            width: 80,
-            height: 80,
+            x: riverLeft + (i * laneWidth) + (laneWidth/2 - objSize/2),
+            y: -120,
+            width: objSize,
+            height: objSize,
             img: artifactImages[i % artifactImages.length],
             text: currentQ.a[i],
-            isCorrect: (i === currentQ.correct)
+            isCorrect: (i === currentQ.correct),
+            laneIndex: i
         });
     }
 }
 
-function updateOptions(){
-    for(let i = activeOptions.length - 1; i >= 0; i--){
-        let o = activeOptions[i];
-        
-        // --- 修改點 2：調慢選項出現與落下的速度 ---
-        o.y += 2.5; 
+function drawGameScene() {
+    ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
 
+    // 河道底色與霧面遮罩
+    ctx.fillStyle = "rgba(100, 220, 255, 0.2)"; 
+    ctx.fillRect(riverLeft, 0, riverWidth, canvas.height);
+    ctx.fillStyle = "rgba(255, 255, 255, 0.55)"; 
+    ctx.fillRect(riverLeft, 0, riverWidth, canvas.height);
+
+    // 判斷玩家在哪一格
+    let playerLane = Math.floor((player.x + player.width/2 - riverLeft) / laneWidth);
+
+    for (let i = 0; i <= 4; i++) {
+        let lx = riverLeft + (i * laneWidth);
+        
+        if (i === playerLane && i < 4) {
+            ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+            ctx.fillRect(lx, 0, laneWidth, canvas.height);
+        }
+
+        // 泳池分隔線
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.7)";
+        ctx.setLineDash([10, 10]);
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(lx, 0);
+        ctx.lineTo(lx, canvas.height);
+        ctx.stroke();
+    }
+    ctx.setLineDash([]);
+}
+
+function updateOptions(){
+    activeOptions.forEach((o) => {
+        o.y += 2.2; 
         ctx.drawImage(o.img, o.x, o.y, o.width, o.height);
+        
         ctx.fillStyle = "black";
-        ctx.font = "bold 20px Microsoft JhengHei";
+        // 根據螢幕寬度自動縮放字體大小
+        let fontSize = window.innerWidth < 600 ? "15px" : "20px";
+        ctx.font = "bold " + fontSize + " Microsoft JhengHei";
         ctx.textAlign = "center";
         ctx.fillText(o.text, o.x + o.width/2, o.y + o.height + 25);
 
+        // 碰撞偵測（稍微內縮判定，讓視覺更精準）
         if(
-            player.x < o.x + o.width &&
-            player.x + player.width > o.x &&
+            player.x + 15 < o.x + o.width &&
+            player.x + player.width - 15 > o.x &&
             player.y < o.y + o.height &&
             player.y + player.height > o.y
         ){
-            if(o.isCorrect) {
-                currentCorrectCount++;
-                if(currentCorrectCount >= 3) endGame("修復成功！✨");
-            } else {
-                hp--;
-                if(hp <= 0) endGame("修復失敗 😭");
-            }
-            isAnswering = false;
-            activeOptions = [];
-            document.getElementById("questionDisplay").style.display = "none";
-            document.getElementById("hp").innerText = hp;
-            document.getElementById("correctCount").innerText = currentCorrectCount;
-            return;
+            checkResult(o.isCorrect);
         }
+    });
 
-        if(o.y > canvas.height) {
-            activeOptions = [];
-            isAnswering = false;
-            document.getElementById("questionDisplay").style.display = "none";
-        }
+    if(activeOptions.length > 0 && activeOptions[0].y > canvas.height) {
+        isAnswering = false;
+        activeOptions = [];
+        document.getElementById("questionDisplay").style.display = "none";
     }
 }
 
-// --- 修改點 3：使用「連續監聽」讓移動更流暢 ---
+function checkResult(isRight) {
+    if(isRight) {
+        currentCorrectCount++;
+        if(currentCorrectCount >= 3) endGame("修復成功！✨");
+    } else {
+        hp--;
+        if(hp <= 0) endGame("修復失敗 😭");
+    }
+    isAnswering = false;
+    activeOptions = [];
+    document.getElementById("questionDisplay").style.display = "none";
+    document.getElementById("hp").innerText = hp;
+    document.getElementById("correctCount").innerText = currentCorrectCount;
+}
+
+// --- 修改點 2：整合「鍵盤」與「觸控」的移動邏輯 ---
 function handlePlayerMovement() {
-    if (keys["ArrowLeft"] || keys["a"]) player.vx = -player.speed;
-    else if (keys["ArrowRight"] || keys["d"]) player.vx = player.speed;
-    else player.vx *= 0.8; // 增加摩擦力緩衝效果
+    let moveLeft = false;
+    let moveRight = false;
+
+    // A. 鍵盤控制檢查
+    if (keys["ArrowLeft"] || keys["a"] || keys["A"]) moveLeft = true;
+    if (keys["ArrowRight"] || keys["d"] || keys["D"]) moveRight = true;
+
+    // B. 觸控控制檢查 (點擊畫面左半邊或右半邊)
+    if (touchX !== null) {
+        if (touchX < window.innerWidth / 2) {
+            moveLeft = true;
+        } else {
+            moveRight = true;
+        }
+    }
+
+    // 執行移動與慣性緩衝
+    if (moveLeft) player.vx = -player.speed;
+    else if (moveRight) player.vx = player.speed;
+    else player.vx *= 0.6; 
 
     player.x += player.vx;
+    
+    // 邊界防漏限制
     if(player.x < riverLeft) player.x = riverLeft;
     if(player.x > riverRight - player.width) player.x = riverRight - player.width;
 }
@@ -179,19 +268,32 @@ function handlePlayerMovement() {
 function gameLoop(){
     if(!gameRunning) return;
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    
-    // 背景與河水
-    ctx.drawImage(bg, 0, 0, canvas.width, canvas.height);
-    
+    drawGameScene();
     handlePlayerMovement();
     ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
-    
     if(isAnswering) updateOptions();
     requestAnimationFrame(gameLoop);
 }
 
+// 鍵盤事件監聽
 window.addEventListener("keydown", (e) => keys[e.key] = true);
 window.addEventListener("keyup", (e) => keys[e.key] = false);
+
+// --- 修改點 3：新增手機和平板的 Touch 觸控事件監聽 ---
+window.addEventListener("touchstart", (e) => {
+    // 取得第一個觸碰點的 X 座標
+    touchX = e.touches[0].clientX;
+}, {passive: true});
+
+window.addEventListener("touchmove", (e) => {
+    // 支援手指按住滑動時更新方向
+    touchX = e.touches[0].clientX;
+}, {passive: true});
+
+window.addEventListener("touchend", () => {
+    // 手指放開時，清除觸碰紀錄，娃娃就會煞車停下
+    touchX = null;
+});
 
 setInterval(spawnQuestion, 4000);
 
